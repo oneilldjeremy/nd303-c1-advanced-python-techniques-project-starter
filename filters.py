@@ -1,4 +1,8 @@
 """Provide filters for querying close approaches and limit the generated results.
+The 'valid_attribute' function takes an approach, an attribute, a value, and a comparison check 
+to see if the approach's attribute meets the condition of the comparison check compared to the value provided.
+Used by the query method in the database module to check whether an NEO/CEA 
+meets the conditions defined in the execution of the create_filters function.
 
 The `create_filters` function produces a collection of objects that is used by
 the `query` method to generate a stream of `CloseApproach` objects that match
@@ -11,66 +15,40 @@ from a comparator (from the `operator` module), a reference value, and a class
 method `get` that subclasses can override to fetch an attribute of interest from
 the supplied `CloseApproach`.
 
-The `limit` function simply limits the maximum number of values produced by an
-iterator.
-
-You'll edit this file in Tasks 3a and 3c.
+The `limit` function limits the maximum number of values produced by an iterator.
 """
 import operator
+import datetime
+import itertools as it
 
+def valid_attribute(approach, op, value, attribute):
+    """The 'valid_attribute' function takes an approach, an attribute, a value, and a comparison check 
+    to see if the approach's attribute meets the condition of the comparison check compared to the value provided.
+    Used by the query method in the database module to check whether an NEO/CEA 
+    meets the conditions defined in the execution of the create_filters function.
 
-class UnsupportedCriterionError(NotImplementedError):
-    """A filter criterion is unsupported."""
-
-
-class AttributeFilter:
-    """A general superclass for filters on comparable attributes.
-
-    An `AttributeFilter` represents the search criteria pattern comparing some
-    attribute of a close approach (or its attached NEO) to a reference value. It
-    essentially functions as a callable predicate for whether a `CloseApproach`
-    object satisfies the encoded criterion.
-
-    It is constructed with a comparator operator and a reference value, and
-    calling the filter (with __call__) executes `get(approach) OP value` (in
-    infix notation).
-
-    Concrete subclasses can override the `get` classmethod to provide custom
-    behavior to fetch a desired attribute from the given `CloseApproach`.
+    :param approach: A `CloseApproach` on which to evaluate this filter.
+    :param op: The operator this function will use to test validity.
+    :param value: The value of the attribute we are testing against. This comes from the value of the associated argument in the filters.
+    :param attribute: The NEO/CAE attribute we are testing against.
+    :return: True if the CAE meets the condition for the attribute and value expected. False if not.
     """
-    def __init__(self, op, value):
-        """Construct a new `AttributeFilter` from an binary predicate and a reference value.
+    neo_attributes = ['diameter', 'hazardous']
+    
+    if attribute in neo_attributes:
+        approach_or_its_neo = approach.neo
+    else:
+        approach_or_its_neo = approach
+    
+    if attribute == 'time':
+        validation_check = op(getattr(approach_or_its_neo,attribute).date(), value)
+    elif attribute == 'hazardous':
+        validation_check = op(getattr(approach_or_its_neo,attribute), value)
+    else:
+        validation_check = op(getattr(approach_or_its_neo,attribute), value)
 
-        The reference value will be supplied as the second (right-hand side)
-        argument to the operator function. For example, an `AttributeFilter`
-        with `op=operator.le` and `value=10` will, when called on an approach,
-        evaluate `some_attribute <= 10`.
-
-        :param op: A 2-argument predicate comparator (such as `operator.le`).
-        :param value: The reference value to compare against.
-        """
-        self.op = op
-        self.value = value
-
-    def __call__(self, approach):
-        """Invoke `self(approach)`."""
-        return self.op(self.get(approach), self.value)
-
-    @classmethod
-    def get(cls, approach):
-        """Get an attribute of interest from a close approach.
-
-        Concrete subclasses must override this method to get an attribute of
-        interest from the supplied `CloseApproach`.
-
-        :param approach: A `CloseApproach` on which to evaluate this filter.
-        :return: The value of an attribute of interest, comparable to `self.value` via `self.op`.
-        """
-        raise UnsupportedCriterionError
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(op=operator.{self.op.__name__}, value={self.value})"
-
+    
+    return validation_check
 
 def create_filters(date=None, start_date=None, end_date=None,
                    distance_min=None, distance_max=None,
@@ -90,9 +68,7 @@ def create_filters(date=None, start_date=None, end_date=None,
     line (in particular, this means that the `--not-hazardous` flag results in
     `hazardous=False`, not to be confused with `hazardous=None`).
 
-    The return value must be compatible with the `query` method of `NEODatabase`
-    because the main module directly passes this result to that method. For now,
-    this can be thought of as a collection of `AttributeFilter`s.
+    A dictionary is returned with the argument names as keys and the argument values as values.
 
     :param date: A `date` on which a matching `CloseApproach` occurs.
     :param start_date: A `date` on or after which a matching `CloseApproach` occurs.
@@ -106,8 +82,18 @@ def create_filters(date=None, start_date=None, end_date=None,
     :param hazardous: Whether the NEO of a matching `CloseApproach` is potentially hazardous.
     :return: A collection of filters for use with `query`.
     """
-    # TODO: Decide how you will represent your filters.
-    return ()
+    filter_dict = {'date': date,
+        'start_date': start_date,
+        'end_date': end_date,
+        'distance_min': distance_min,
+        'distance_max': distance_max,
+        'velocity_min': velocity_min,
+        'velocity_max': velocity_max,
+        'diameter_min': diameter_min,
+        'diameter_max': diameter_max,
+        'hazardous': hazardous
+    }
+    return filter_dict
 
 
 def limit(iterator, n=None):
@@ -119,5 +105,7 @@ def limit(iterator, n=None):
     :param n: The maximum number of values to produce.
     :yield: The first (at most) `n` values from the iterator.
     """
-    # TODO: Produce at most `n` values from the given iterator.
-    return iterator
+    n = 10 if (n == 0 or n is None) else n
+
+    
+    return it.islice(iterator, n)
